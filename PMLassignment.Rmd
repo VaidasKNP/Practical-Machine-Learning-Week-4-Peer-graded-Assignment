@@ -1,0 +1,75 @@
+#Load required packages
+library(caret)
+library(AppliedPredictiveModeling)
+library(ggplot2)
+
+#Set seed for consistent results
+set.seed(42)
+
+#Load training and test data for predictions (Quiz)
+datTraining = read.csv("../Desktop/pml-training.csv")
+datTesting = read.csv("../Desktop/pml-testing.csv")
+
+#Split training data into data for training and testing/validation of the model (50/50 split)
+inTrain <- createDataPartition(datTraining$classe, p = 5/10)[[1]]
+training <- datTraining[ inTrain,]
+testing <- datTraining[-inTrain,]
+
+#DATA EXPLORATION
+
+#First let's check the classe (variable we are predicting) to see if it's distributed approximately evenly
+freqTable <- as.data.frame(summary(datTraining$classe))
+df <- data.frame(Classe=rownames(freqTable),Frequency=freqTable$`summary(datTraining$classe)`)
+ggplot(data=df, aes(x=Classe, y=Frequency))  + geom_bar(stat="identity")
+#We see that all classes are represented rather equally
+
+#Let us check for missing data in training data set
+MissingPercentage <- function(x){sum(is.na(x))/length(x)*100} #function to calculate missing values percentage in array
+missingColumnsIndex <- apply(training,2,MissingPercentage) > 5  #For simplicity sake, let's remove variables with >=5% missing data
+training <- training[!missingColumnsIndex]
+#Let us check whether any of the remaining data is missing and if so, we need to decide what to do with it
+sum((apply(training,2,MissingPercentage) > 0)*1)
+#It seems there is no missing data left
+
+#Let us start exploring variables to see if there are problems or if we could have some insights
+
+#We can see that variable "kurtosis_roll_belt" has a lot of missing values and is classified as categorical
+#rather than numerical
+class(training$kurtosis_roll_belt)
+#we could fix them one by one (convert them to numeric and see whether they could be good predictor), however
+#in this assignment we just remove them. If our model will perform badly, we will return to removed variables to
+#see if they could improve our scores
+emptyCols <- c('kurtosis_roll_arm','kurtosis_picth_arm',	'kurtosis_yaw_arm'	,'skewness_roll_arm',	'skewness_pitch_arm'	,'skewness_yaw_arm')
+training <- training[ , !(names(training) %in% emptyCols)]
+emptyCols2 <- c('kurtosis_roll_dumbbell',	'kurtosis_picth_dumbbell',	'kurtosis_yaw_dumbbell'	,'skewness_roll_dumbbell',	'skewness_pitch_dumbbell'	,'skewness_yaw_dumbbell',	'max_yaw_dumbbell',	'min_yaw_dumbbell',	'amplitude_yaw_dumbbell')
+training <- training[ , !(names(training) %in% emptyCols2)]
+emptyCols3 <- c('kurtosis_roll_forearm',	'kurtosis_picth_forearm',	'kurtosis_yaw_forearm',	'skewness_roll_forearm',	'skewness_pitch_forearm',	'skewness_yaw_forearm',	'max_yaw_forearm',	'min_yaw_forearm',	'amplitude_yaw_forearm')
+training <- training[ , !(names(training) %in% emptyCols3)]
+emptyCols4 <- c('kurtosis_roll_belt',	'kurtosis_picth_belt',	'kurtosis_yaw_belt'	,'skewness_roll_belt'	,'skewness_roll_belt.1',	'skewness_yaw_belt',	'max_yaw_belt',	'min_yaw_belt',	'amplitude_yaw_belt')
+training <- training[ , !(names(training) %in% emptyCols4)]
+
+#Furthermore, we see that variable X is just an index and thus we remove it
+#Also, we remove time variables as they increase our predictive variable count immensely. If we see that our model
+#underperforms, we could include time as a predictive variable (probably better to group it in categories "morning",
+#"afternoon", "evening") or similar to reduce predictive variables.
+
+removeCols <- c('X', 'raw_timestamp_part_1', 'raw_timestamp_part_2', 'cvtd_timestamp')
+training <- training[ , !(names(training) %in% removeCols)]
+
+#MODELING
+#In this assignment we will use simple random forests model. If we are unsatisfied with results, we could 
+#experiment with more models/model tuning/ensembling. 
+control <- trainControl(method="cv", allowParallel=T, number=5) #We use crossValidation to tune model parameters. We choose 5 folds for performance sake
+modelRF <- train(classe ~ ., data=training, method="rf", trControl=control, ntree=10, tuneLength=10) #For performance sake we set ntree=10 and tuneLenght=10
+plot(modelRF) #Plot model performance with respect to tuning parameter mtry
+print(modelRF) #Print model summary
+preds <- predict(modelRF, testing) #Make predictions on the test data to estimate generalised error
+confusionMatrix(preds, testing$classe) #Print confusion matrix to see our model performance
+
+#We can see our model accuracy on test data (50% split on all data) is 0.992% . For this assignment it is a satisfactory
+#result. Futhermore, we could improve model performance by including more predictors (feature engineering like time of day)
+#and selecting and/or combining different models.
+
+#PREDICT QUIZ DATA POINTS
+testPredictions <- predict(modelRF, datTesting)
+testPredictions
